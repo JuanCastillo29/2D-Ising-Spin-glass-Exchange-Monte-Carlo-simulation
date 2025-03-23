@@ -3,7 +3,7 @@
 
 typedef struct{
     int value;
-    int *vecinos;
+    int vecinos[4];
 }Espin;
 
 typedef struct{
@@ -13,5 +13,8 @@ typedef struct{
 }EspinLattice;
 
 void Input( int *input, double *TMax, double *TMin);
+
+void InicializarSistema(EspinLattice *sistema, int L);
+void FreeSystemMemory(EspinLattice *sistemas);
 
 #endif // MAIN_H_INCLUDED
