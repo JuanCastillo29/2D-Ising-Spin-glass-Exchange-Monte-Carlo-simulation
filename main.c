@@ -72,14 +72,12 @@ void InicializarSistema(EspinLattice *sistema, int L){
         printf("Error at memory allocation.\n");
         exit(1);
     }
-    int spinvalue;
     //Starts with a random configuration.
     for (int i = 0; i < N; i++) {
         if(Random()<0.5)
-            spinvalue = -1;
+            sistema->lattice[i].value  = -1;
         else
-            spinvalue = +1;
-        sistema->lattice[i].value = spinvalue;
+            sistema->lattice[i].value  = +1;
     }
 
     for (int i = 0; i < L; i++) {
@@ -127,7 +125,28 @@ void PasoMonteCarlo(EspinLattice *sistema){
 }
 
 void CambioTemperatura(EspinLattice *sistema1, EspinLattice *sistema2){
+    double db = sistema2->Beta - sistema1->Beta, dE = sistema2->Energy - sistema1->Energy;
+    double Prob = exp(-db*dE);
+    if(Random()<Prob){
+        double aux = sistema2->Beta;
+        sistema2->Beta = sistema1->Beta;
+        sistema1->Beta = aux;
+        for(int i = 0; i<sistema1->Size; i++){
+            sistema1->lattice[i].prob = exp(-(sistema1->Beta)*sistema1->lattice[i].dE);
+            sistema2->lattice[i].prob = exp(-(sistema2->Beta)*sistema2->lattice[i].dE);
+        }
+    }
+}
 
+void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, int TExchange){
+    for(int t=0; t<Ttime; t++){
+        for(int j=0; j<NReplicas; j++)
+            PasoMonteCarlo(&sistemas[j]);
+       /* if(t%TMedida)
+
+        if(t&TExchange)*/
+
+    }
 }
 
 int main()
@@ -148,6 +167,7 @@ int main()
         InicializarSistema(&sistemas[i], inputdata[0]);
     }
     //Simulación aquí:
+
 
     // Liberar memoria
     for (int i = 0; i < 2*inputdata[1]; i++) {
