@@ -10,15 +10,15 @@ unsigned char ind_ran,ig1,ig2,ig3;
 
 typedef struct{
     int value;
-    int vecinos[4];
+    unsigned int vecinos[4];
     double dE;
-    double prob;
+    float prob;
 }Espin;
 
 
 typedef struct{
     Espin *lattice;
-    int Size;
+    unsigned int Size;
     double Beta;
     double Energy;
 }EspinLattice;

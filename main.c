@@ -4,6 +4,7 @@
 
 #include "main.h"
 
+
 //Generador de números de Parisi-Rapuano.
 void ini_ran(int SEMILLA)
 {
@@ -32,6 +33,7 @@ float Random(void)
     r=ir1*NormRANu;
     return r;
 }
+
 
 //Generador de los números aleatorios según distribución gaussiana por el método de Box-Muller
 double DistrGauss(void){
@@ -74,7 +76,7 @@ void InicializarSistema(EspinLattice *sistema, int L){
     }
     //Starts with a random configuration.
     for (int i = 0; i < N; i++) {
-        if(Random()<0.5)
+        if(/*Random()<0.5*/ i%2==0)
             sistema->lattice[i].value  = -1;
         else
             sistema->lattice[i].value  = +1;
@@ -86,10 +88,33 @@ void InicializarSistema(EspinLattice *sistema, int L){
 
             // Assign neighbors with periodic boundary conditions
             sistema->lattice[idx].vecinos[0] = i * L + (j + 1) % L;         // Right
-            sistema->lattice[idx].vecinos[1] = i * L + (j - 1 + L) % L;     // Left
-            sistema->lattice[idx].vecinos[2] = ((i + 1) % L) * L + j;       // Down
-            sistema->lattice[idx].vecinos[3] = ((i - 1 + L) % L) * L + j;   // Up
+            sistema->lattice[idx].vecinos[2] = i * L + (j - 1 + L) % L;     // Left
+            sistema->lattice[idx].vecinos[3] = ((i + 1) % L) * L + j;       // Down
+            sistema->lattice[idx].vecinos[1] = ((i - 1 + L) % L) * L + j;   // Up
         }
+    }
+}
+
+double Localfield(EspinLattice *sistema, double *J,unsigned int *n, int index){
+    double h = 0;
+    h += J[index]* sistema->lattice[*(n)].value; //Right bond contribution.
+    h += J[sistema->Size + index]* sistema->lattice[*(n+1)].value; //Up bond contribution.
+    h += J[*(n+2)]* sistema->lattice[*(n+2)].value; //Left bond contribution.
+    h += J[sistema->Size + *(n+3)]* sistema->lattice[*(n+3)].value; //Down bond contribution.
+    return h;
+}
+
+void InicializarEnergias(EspinLattice *sistema, double *J){
+    Espin *spin;
+    sistema->Energy=0;
+    double ESpin;
+    for(int i=0; i< sistema->Size; i++){
+        spin = &sistema->lattice[i];
+        ESpin = spin->value*Localfield(sistema, J, spin->vecinos, i);
+        sistema->Energy += ESpin/2;
+        spin->dE = -2*ESpin;
+        spin->prob=exp(-(spin->dE)*(sistema->Beta));
+
     }
 }
 
@@ -103,23 +128,22 @@ void Actualizarvecinos(Espin *spin, Espin *vecino, double Beta){
 
 void PasoMonteCarlo(EspinLattice *sistema){
     int n;
-    Espin spin;
+    Espin *spin;
 
     for(int i=0; i< sistema->Size; i++){
         n = Random()*sistema->Size;
-        spin = sistema->lattice[n];
+        spin = &sistema->lattice[n];
 
         //With a probability given by the Metropolis algorithm, I change the spin.
-        if(Random()< spin.prob){
-
+        if(Random()< spin->prob){
             //The change in the spin also changes the field that its neighbours see.
             for(int j=0; j<4; j++)
-                Actualizarvecinos(&spin, &sistema->lattice[spin.vecinos[j]], sistema->Beta);
+                Actualizarvecinos(spin, &sistema->lattice[spin->vecinos[j]], sistema->Beta);
 
             //I change the system
-            sistema->Energy += spin.dE;
-            spin.value = -spin.value;
-            spin.dE  = -spin.dE;
+            sistema->Energy += spin->dE;
+            spin->value = -spin->value;
+            spin->dE  = -spin->dE;
         }
     }
 }
@@ -143,8 +167,11 @@ void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, i
         for(int j=0; j<NReplicas; j++)
             PasoMonteCarlo(&sistemas[j]);
        /* if(t%TMedida)
-
-        if(t&TExchange)*/
+        */
+        /*if(t%TExchange){
+            for(int i=0; i<NReplicas -2; i++)
+                CambioTemperatura(&sistemas[i], &sistemas[i+2]);
+        */
 
     }
 }
@@ -155,16 +182,27 @@ int main()
     double TMax, TMin;
     Input(inputdata, &TMax, &TMin);
     ini_ran(inputdata[5]);
-
-    EspinLattice *sistemas = (EspinLattice *)malloc(2*inputdata[1]* sizeof(EspinLattice));
+    double J[200];
+    for(int i=0; i<200; i++)
+        J[i]=1;
+    EspinLattice sistema;
+    InicializarSistema(&sistema, 10);
+    InicializarEnergias(&sistema, J);
+    printf("%lf\n", sistema.Energy);
+    FreeSystemMemory(&sistema);
+    /*EspinLattice *sistemas = (EspinLattice *)malloc(2*inputdata[1]* sizeof(EspinLattice));
     if (sistemas == NULL) {
         printf("Error at memory allocation.\n");
         exit(1);
     }
+    double J[inputdata[0]*inputdata[0]];
+    for(int i=0; i<inputdata[0]*inputdata[0]; i++)
+        J[i] = DistrGauss();
 
     // Inicializar cada sistema
     for (int i = 0; i < 2*inputdata[1]; i++) {
         InicializarSistema(&sistemas[i], inputdata[0]);
+        InicializarEnergias(&sistemas[i], J);
     }
     //Simulación aquí:
 
@@ -174,6 +212,6 @@ int main()
         FreeSystemMemory(&sistemas[i]);
     }
     free(sistemas);
-
+*/
     return 0;
 }
