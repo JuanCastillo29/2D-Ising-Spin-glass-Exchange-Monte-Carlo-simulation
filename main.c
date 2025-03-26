@@ -130,7 +130,7 @@ void Actualizarvecinos(Espin *spin, Espin *vecino, double Beta, double *J, int b
     double dH = -2 * Jij * spin->value;
 
     // Update neighbor's dE (change in energy if it flips)
-    vecino->dE += 2 * vecino->value * dH;
+    vecino->dE -= 2 * vecino->value * dH;
 
     // Update the transition probability using the Metropolis factor
     vecino->prob = exp(-vecino->dE * Beta);
@@ -153,7 +153,6 @@ void PasoMonteCarlo(EspinLattice *sistema, double *J){
                 else if (j == 1) bond_index = sistema->Size + n;  // Up
                 else if (j == 2) bond_index = spin->vecinos[2];  // Left
                 else if (j == 3) bond_index = sistema->Size + spin->vecinos[3];  // Down
-
                 Actualizarvecinos(spin, &sistema->lattice[spin->vecinos[j]], sistema->Beta, J,  bond_index);
             }
             //I change the system
@@ -180,9 +179,11 @@ void CambioTemperatura(EspinLattice *sistema1, EspinLattice *sistema2){
 }
 
 void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, int TExchange,double *J){
+    FILE *f=fopen("Energia.txt", "w");
     for(int t=0; t<Ttime; t++){
         for(int j=0; j<NReplicas; j++)
             PasoMonteCarlo(&sistemas[j], J);
+        fprintf(f, "%lf\n", sistemas->Energy/sistemas->Size);
        /* if(t%TMedida)
         */
         /*if(t%TExchange){
@@ -191,6 +192,7 @@ void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, i
         */
 
     }
+    fclose(f);
 }
 
 int main()
@@ -200,7 +202,16 @@ int main()
     Input(inputdata, &TMax, &TMin);
     ini_ran(inputdata[5]);
 
-    EspinLattice *sistemas = (EspinLattice *)malloc(2*inputdata[1]* sizeof(EspinLattice));
+    EspinLattice sistema;
+    InicializarSistema(&sistema, 20);
+    sistema.Beta = 1.0/2.6;
+    double J[20*20*2];
+    for(int i=0; i<20*20*2; i++)
+        J[i]=-1;
+    InicializarEnergias(&sistema, J);
+    Simulacion(&sistema, 1000, 1, 1000, 1000, J);
+    FreeSystemMemory(&sistema);
+    /*EspinLattice *sistemas = (EspinLattice *)malloc(2*inputdata[1]* sizeof(EspinLattice));
     if (sistemas == NULL) {
         printf("Error at memory allocation.\n");
         exit(1);
@@ -228,4 +239,5 @@ int main()
     free(J);
     free(sistemas);
     return 0;
+    */
 }
