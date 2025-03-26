@@ -76,7 +76,7 @@ void InicializarSistema(EspinLattice *sistema, int L){
     }
     //Starts with a random configuration.
     for (int i = 0; i < N; i++) {
-        if(/*Random()<0.5*/ i%2==0)
+        if(Random()<0.5)
             sistema->lattice[i].value  = -1;
         else
             sistema->lattice[i].value  = +1;
@@ -111,7 +111,7 @@ void InicializarEnergias(EspinLattice *sistema, double *J){
     for(int i=0; i< sistema->Size; i++){
         spin = &sistema->lattice[i];
         ESpin = spin->value*Localfield(sistema, J, spin->vecinos, i);
-        sistema->Energy += ESpin/2;
+        sistema->Energy += ESpin/2; //I have to divide by two to avoid double counting.
         spin->dE = -2*ESpin;
         spin->prob=exp(-(spin->dE)*(sistema->Beta));
 
@@ -122,14 +122,24 @@ void FreeSystemMemory(EspinLattice *sistema) {
     free(sistema->lattice);
 }
 
-void Actualizarvecinos(Espin *spin, Espin *vecino, double Beta){
+void Actualizarvecinos(Espin *spin, Espin *vecino, double Beta, double *J, int bond_index){
+    // Get the correct bond strength J_{ij}
+    double Jij = J[bond_index];
 
+    // Compute the change in the local field due to the spin flip
+    double dH = -2 * Jij * spin->value;
+
+    // Update neighbor's dE (change in energy if it flips)
+    vecino->dE += 2 * vecino->value * dH;
+
+    // Update the transition probability using the Metropolis factor
+    vecino->prob = exp(-vecino->dE * Beta);
 }
 
-void PasoMonteCarlo(EspinLattice *sistema){
+void PasoMonteCarlo(EspinLattice *sistema, double *J){
     int n;
     Espin *spin;
-
+    int bond_index;
     for(int i=0; i< sistema->Size; i++){
         n = Random()*sistema->Size;
         spin = &sistema->lattice[n];
@@ -137,13 +147,20 @@ void PasoMonteCarlo(EspinLattice *sistema){
         //With a probability given by the Metropolis algorithm, I change the spin.
         if(Random()< spin->prob){
             //The change in the spin also changes the field that its neighbours see.
-            for(int j=0; j<4; j++)
-                Actualizarvecinos(spin, &sistema->lattice[spin->vecinos[j]], sistema->Beta);
+            for(int j=0; j<4; j++){
+                // Determine the correct bond index
+                if (j == 0) bond_index = n;  // Right
+                else if (j == 1) bond_index = sistema->Size + n;  // Up
+                else if (j == 2) bond_index = spin->vecinos[2];  // Left
+                else if (j == 3) bond_index = sistema->Size + spin->vecinos[3];  // Down
 
+                Actualizarvecinos(spin, &sistema->lattice[spin->vecinos[j]], sistema->Beta, J,  bond_index);
+            }
             //I change the system
             sistema->Energy += spin->dE;
             spin->value = -spin->value;
             spin->dE  = -spin->dE;
+            spin->prob = 1.0/spin->prob;
         }
     }
 }
@@ -162,10 +179,10 @@ void CambioTemperatura(EspinLattice *sistema1, EspinLattice *sistema2){
     }
 }
 
-void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, int TExchange){
+void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, int TExchange,double *J){
     for(int t=0; t<Ttime; t++){
         for(int j=0; j<NReplicas; j++)
-            PasoMonteCarlo(&sistemas[j]);
+            PasoMonteCarlo(&sistemas[j], J);
        /* if(t%TMedida)
         */
         /*if(t%TExchange){
@@ -182,22 +199,19 @@ int main()
     double TMax, TMin;
     Input(inputdata, &TMax, &TMin);
     ini_ran(inputdata[5]);
-    double J[200];
-    for(int i=0; i<200; i++)
-        J[i]=1;
-    EspinLattice sistema;
-    InicializarSistema(&sistema, 10);
-    InicializarEnergias(&sistema, J);
-    printf("%lf\n", sistema.Energy);
-    FreeSystemMemory(&sistema);
-    /*EspinLattice *sistemas = (EspinLattice *)malloc(2*inputdata[1]* sizeof(EspinLattice));
+
+    EspinLattice *sistemas = (EspinLattice *)malloc(2*inputdata[1]* sizeof(EspinLattice));
     if (sistemas == NULL) {
         printf("Error at memory allocation.\n");
         exit(1);
     }
-    double J[inputdata[0]*inputdata[0]];
+    double *J = (double *)malloc(2*inputdata[0]*inputdata[0]*sizeof(double));
     for(int i=0; i<inputdata[0]*inputdata[0]; i++)
         J[i] = DistrGauss();
+       if (sistemas == NULL) {
+        printf("Error at memory allocation.\n");
+        exit(1);
+    }
 
     // Inicializar cada sistema
     for (int i = 0; i < 2*inputdata[1]; i++) {
@@ -211,7 +225,7 @@ int main()
     for (int i = 0; i < 2*inputdata[1]; i++) {
         FreeSystemMemory(&sistemas[i]);
     }
+    free(J);
     free(sistemas);
-*/
     return 0;
 }
