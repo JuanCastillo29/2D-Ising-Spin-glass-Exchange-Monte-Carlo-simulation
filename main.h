@@ -23,9 +23,15 @@ typedef struct{
     double Energy;
 }EspinLattice;
 
+
+typedef struct{
+    FILE *f;
+    int Systemindex;
+} TimeEvolStorage;
+
 void Input( int *input, double *TMax, double *TMin);
 
-void InicializarSistema(EspinLattice *sistema, int L);
-void FreeSystemMemory(EspinLattice *sistemas);
+void InicializarSistema(EspinLattice *sistema, int L, double T);
+void FreeSystemMemory(EspinLattice *sistemas, TimeEvolStorage *fichero);
 
 #endif // MAIN_H_INCLUDED
