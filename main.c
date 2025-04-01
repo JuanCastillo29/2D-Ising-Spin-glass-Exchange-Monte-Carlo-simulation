@@ -66,7 +66,7 @@ void Input( int *input, double *TMax, double *TMin){
 }
 
 
-void InicializarSistema(EspinLattice *sistema, int L, double T){
+void InicializarSistema2D(EspinLattice *sistema, int L, double T){
     sistema->Beta = 1.0/T;
     int N = L*L;
     sistema->Size = N;
@@ -166,13 +166,17 @@ void PasoMonteCarlo(EspinLattice *sistema, double *J){
     }
 }
 
-void CambioTemperatura(EspinLattice *sistema1, EspinLattice *sistema2){
+void CambioTemperatura(TimeEvolStorage *fichero1, EspinLattice *sistema, TimeEvolStorage *fichero2 ){
+    EspinLattice *sistema1 = &sistema[fichero1->Systemindex], *sistema2 = &sistema[fichero2->Systemindex];
     double db = sistema2->Beta - sistema1->Beta, dE = sistema2->Energy - sistema1->Energy;
     double Prob = exp(-db*dE);
     if(Random()<Prob){
         double aux = sistema2->Beta;
         sistema2->Beta = sistema1->Beta;
         sistema1->Beta = aux;
+        int aux2 = fichero2->Systemindex;
+        fichero2->Systemindex = fichero1->Systemindex;
+        fichero1->Systemindex = aux2;
         for(int i = 0; i<sistema1->Size; i++){
             sistema1->lattice[i].prob = exp(-(sistema1->Beta)*sistema1->lattice[i].dE);
             sistema2->lattice[i].prob = exp(-(sistema2->Beta)*sistema2->lattice[i].dE);
@@ -180,9 +184,9 @@ void CambioTemperatura(EspinLattice *sistema1, EspinLattice *sistema2){
     }
 }
 
-void InicializarFicheros(double T, TimeEvolStorage *E, int i, int NReplicas){
+void InicializarFicheros(double T, TimeEvolStorage *E, int i){
     char namefile[50];
-    sprintf(namefile, "Energias/Temperatura=%lf,Replica=%d.dat", T, i/NReplicas);
+    sprintf(namefile, "Energias/Temperatura=%lf.dat", T);
     E->f = fopen(namefile, "w");
     E->Systemindex = i;
     if(E->f == NULL)
@@ -197,10 +201,10 @@ void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, i
             for(int j=0; j<NReplicas; j++)
                 fprintf(ficheros[j].f, "%d \t %lf\n", t, sistemas[ficheros[j].Systemindex].Energy/sistemas[ficheros[j].Systemindex].Size);
         }
-        /*if(t%TExchange){
-            for(int i=0; i<NReplicas -2; i++)
-                CambioTemperatura(&sistemas[i], &sistemas[i+2]);
-        */
+        if(t%TExchange == 0){
+            for(int i= (t/TExchange)%2; i<NReplicas -1; i+=2)
+                CambioTemperatura(&ficheros[i], sistemas, &ficheros[i+1]);
+        }
     }
 }
 
@@ -212,13 +216,13 @@ int main()
     ini_ran(inputdata[5]);
     double dT = (TMax - TMin)/(inputdata[1]-1);
 
-    EspinLattice *sistemas = (EspinLattice *)malloc(2*inputdata[1]* sizeof(EspinLattice));
+    EspinLattice *sistemas = (EspinLattice *)malloc(inputdata[1]* sizeof(EspinLattice));
     if (sistemas == NULL) {
         printf("Error at memory allocation.\n");
         exit(1);
     }
 
-    TimeEvolStorage *ficheros = (TimeEvolStorage *)malloc(2*inputdata[1]*sizeof(TimeEvolStorage));
+    TimeEvolStorage *ficheros = (TimeEvolStorage *)malloc(inputdata[1]*sizeof(TimeEvolStorage));
     if(ficheros == NULL){
         printf("Error at memory allocation.\n");
         exit(1);
@@ -229,19 +233,19 @@ int main()
         exit(1);
     }
     for(int i=0; i<2*inputdata[0]*inputdata[0]; i++)
-        J[i] = -1;//DistrGauss();
+        J[i] = -1;
 
     // Inicializar cada sistema
-    for (int i = 0; i < 2*inputdata[1]; i++) {
-        InicializarSistema(&sistemas[i], inputdata[0], TMin + dT * (i%inputdata[1]));
-        InicializarFicheros(TMin + dT * (i%inputdata[1]), &ficheros[i], i, inputdata[1]);
+    for (int i = 0; i < inputdata[1]; i++) {
+        InicializarSistema2D(&sistemas[i], inputdata[0], TMin + dT * i);
+        InicializarFicheros(TMin + dT * i, &ficheros[i], i);
         InicializarEnergias(&sistemas[i], J);
     }
     //Simulación aquí:
-    Simulacion(sistemas, inputdata[4], 2*inputdata[1], inputdata[3], inputdata[2], J, &ficheros[0]);
+    Simulacion(sistemas, inputdata[4], inputdata[1], inputdata[3], inputdata[2], J, &ficheros[0]);
 
     // Liberar memoria
-    for (int i = 0; i < 2*inputdata[1]; i++) {
+    for (int i = 0; i <inputdata[1]; i++) {
         FreeSystemMemory(&sistemas[i], &ficheros[i]);
     }
     free(J);
