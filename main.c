@@ -121,7 +121,60 @@ void InicializarEnergias(EspinLattice *sistema, double *J){
 
 void FreeSystemMemory(EspinLattice *sistema, TimeEvolStorage *fichero) {
     free(sistema->lattice);
+    sistema->lattice = NULL;
     fclose(fichero->f);
+    fichero->f = NULL;
+}
+
+void PlotWithGnuplot(FILE *f) {
+    // Flush and rewind before reading
+    fflush(f);
+    rewind(f); // Go to the beginning of the file
+    if (f == NULL) {
+        printf("Error: File pointer is NULL.\n");
+        return;
+    }
+
+    // Create a temporary file to store the data
+    char tempFilename[] = "temp_gnuplot_data.txt";
+    FILE *tempFile = fopen(tempFilename, "w");
+    if (tempFile == NULL) {
+        printf("Error: Could not create temporary file.\n");
+        return;
+    }
+
+    // Copy content from f to tempFile
+
+    if (fgetc(f) == EOF) {
+    printf("Error: Input file is empty.\n");
+    fclose(tempFile);
+    return;
+    }
+    rewind(f);
+    char buffer[256];
+    while (fgets(buffer, sizeof(buffer), f) != NULL) {
+        fputs(buffer, tempFile);
+    }
+
+    fclose(tempFile); // Close temp file after writing
+
+    // Open GNUplot and plot the temporary file
+    FILE *gnuplotPipe = _popen("gnuplot -persist", "w");
+    if (gnuplotPipe == NULL) {
+        printf("Error: Could not open GNUplot.\n");
+        return;
+    }
+
+    fprintf(gnuplotPipe, "set title 'Simulation Results'\n");
+    fprintf(gnuplotPipe, "set xlabel 'X-axis'\n");
+    fprintf(gnuplotPipe, "set ylabel 'Y-axis'\n");
+    fprintf(gnuplotPipe, "plot '%s' using 1:2 pt 7 title 'T = 2.0'\n", tempFilename);
+    fflush(gnuplotPipe);
+
+    _pclose(gnuplotPipe); // Close GNUplot
+
+    // Optional: Remove the temp file after plotting
+    remove(tempFilename);
 }
 
 void Actualizarvecinos(Espin *spin, Espin *vecino, double Beta, double *J, int bond_index){
@@ -187,7 +240,7 @@ void CambioTemperatura(TimeEvolStorage *fichero1, EspinLattice *sistema, TimeEvo
 void InicializarFicheros(double T, TimeEvolStorage *E, int i){
     char namefile[50];
     sprintf(namefile, "Energias/Temperatura=%lf.dat", T);
-    E->f = fopen(namefile, "w");
+    E->f = fopen(namefile, "w+");
     E->Systemindex = i;
     if(E->f == NULL)
         printf("Error at openning the file: %s.", namefile);
@@ -215,7 +268,14 @@ int main()
     Input(inputdata, &TMax, &TMin);
     ini_ran(inputdata[5]);
     double dT = (TMax - TMin)/(inputdata[1]-1);
-
+    /*int flag;
+    printf("Please select the type of simulation you wish to perform:\n");
+    printf("Enter '1' for a standard Ising model simulation or '2' for a spin glass simulation.\n");
+    scanf("%d", &flag);
+    if(flag != 1 && flag != 2){
+        printf("Not valid input");
+        return 0;
+    }*/
     EspinLattice *sistemas = (EspinLattice *)malloc(inputdata[1]* sizeof(EspinLattice));
     if (sistemas == NULL) {
         printf("Error at memory allocation.\n");
@@ -227,6 +287,7 @@ int main()
         printf("Error at memory allocation.\n");
         exit(1);
     }
+
     double *J = (double *)malloc(2*inputdata[0]*inputdata[0]*sizeof(double));
     if (J == NULL) {
         printf("Error at memory allocation.\n");
@@ -242,14 +303,19 @@ int main()
         InicializarEnergias(&sistemas[i], J);
     }
     //Simulación aquí:
-    Simulacion(sistemas, inputdata[4], inputdata[1], inputdata[3], inputdata[2], J, &ficheros[0]);
+    Simulacion(sistemas, inputdata[4], inputdata[1], inputdata[3], inputdata[2], J, ficheros);
+
+    PlotWithGnuplot(ficheros[0].f);
 
     // Liberar memoria
     for (int i = 0; i <inputdata[1]; i++) {
         FreeSystemMemory(&sistemas[i], &ficheros[i]);
     }
     free(J);
+    J = NULL;
     free(ficheros);
+    ficheros = NULL;
     free(sistemas);
+    sistemas = NULL;
     return 0;
 }
