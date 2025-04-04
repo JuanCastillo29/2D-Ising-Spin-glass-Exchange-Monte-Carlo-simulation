@@ -27,6 +27,7 @@ typedef struct{
 typedef struct{
     FILE *f;
     int Systemindex;
+    double T;
 } TimeEvolStorage;
 
 void Input( int *input, double *TMax, double *TMin);
