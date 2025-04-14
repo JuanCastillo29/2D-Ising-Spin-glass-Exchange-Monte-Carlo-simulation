@@ -66,16 +66,26 @@ void Input( int *input, double *TMax, double *TMin){
     fclose(file);
 }
 
+int int_pow(int base, int exp) {
+    int result = 1;
+    for (int i = 0; i < exp; i++)
+        result *= base;
+    return result;
+}
 
-void InicializarSistema2D(EspinLattice *sistema, int L, double T){
+
+void InicializarSistema2D(EspinLattice *sistema, int L, double T, int d){
     sistema->Beta = 1.0/T;
-    int N = L*L;
+    sistema->Dim = d;
+    int N = int_pow(L, sistema->Dim);
     sistema->Size = N;
     sistema->lattice = (Espin *)malloc(N * sizeof(Espin));
+
     if (sistema->lattice == NULL) {
         printf("Error at memory allocation.\n");
         exit(1);
     }
+
     //Starts with a random configuration.
     for (int i = 0; i < N; i++) {
         if(Random()<0.5)
@@ -84,25 +94,43 @@ void InicializarSistema2D(EspinLattice *sistema, int L, double T){
             sistema->lattice[i].value  = +1;
     }
 
-    for (int i = 0; i < L; i++) {
-        for (int j = 0; j < L; j++) {
-            int idx = i * L + j;  // Convert (i, j) to 1D index
+    if(sistema->Dim==2){
+        for (int i = 0; i < L; i++) {
+            for (int j = 0; j < L; j++) {
+                int idx = i * L + j;  // Convert (i, j) to 1D index
 
-            // Assign neighbors with periodic boundary conditions
-            sistema->lattice[idx].vecinos[0] = i * L + (j + 1) % L;         // Right
-            sistema->lattice[idx].vecinos[2] = i * L + (j - 1 + L) % L;     // Left
-            sistema->lattice[idx].vecinos[3] = ((i + 1) % L) * L + j;       // Down
-            sistema->lattice[idx].vecinos[1] = ((i - 1 + L) % L) * L + j;   // Up
+                // Assign neighbors with periodic boundary conditions
+                sistema->lattice[idx].vecinos[0] = i * L + (j + 1) % L;         // Right
+                sistema->lattice[idx].vecinos[2] = i * L + (j - 1 + L) % L;     // Left
+                sistema->lattice[idx].vecinos[3] = ((i + 1) % L) * L + j;       // Down
+                sistema->lattice[idx].vecinos[1] = ((i - 1 + L) % L) * L + j;   // Up
+            }
+        }
+    }
+    else if (sistema->Dim == 3) {
+        for (int x = 0; x < L; x++) {
+            for (int y = 0; y < L; y++) {
+                for (int z = 0; z < L; z++) {
+                    int idx = x * L * L + y * L + z;
+                    sistema->lattice[idx].vecinos[0] = x * L * L + y * L + (z + 1) % L;                        // Right (Z+)
+                    sistema->lattice[idx].vecinos[1] = x * L * L + y * L + (z - 1 + L) % L;                    // Left (Z-)
+                    sistema->lattice[idx].vecinos[2] = x * L * L + (y + 1) % L * L + z;                        // Down (Y+)
+                    sistema->lattice[idx].vecinos[3] = x * L * L + (y - 1 + L) % L * L + z;                    // Up (Y-)
+                    sistema->lattice[idx].vecinos[4] = ((x + 1) % L) * L * L + y * L + z;                      // Front (X+)
+                    sistema->lattice[idx].vecinos[5] = ((x - 1 + L) % L) * L * L + y * L + z;                  // Back (X-)
+                }
+            }
         }
     }
 }
 
 double Localfield(EspinLattice *sistema, double *J,unsigned int *n, int index){
     double h = 0;
-    h += J[index]* sistema->lattice[*(n)].value; //Right bond contribution.
-    h += J[sistema->Size + index]* sistema->lattice[*(n+1)].value; //Up bond contribution.
-    h += J[*(n+2)]* sistema->lattice[*(n+2)].value; //Left bond contribution.
-    h += J[sistema->Size + *(n+3)]* sistema->lattice[*(n+3)].value; //Down bond contribution.
+    for (int i = 0; i < 2 * sistema->Dim; i++) {
+        int bond_index = (i < sistema->Dim) ? index : n[i]; // Puede ajustarse según cómo organices J
+        int Joffset = (i / 2) * sistema->Size;
+        h += J[Joffset + bond_index] * sistema->lattice[n[i]].value;
+    }
     return h;
 }
 
@@ -153,14 +181,18 @@ void PasoMonteCarlo(EspinLattice *sistema, double *J){
 
         //With a probability given by the Metropolis algorithm, I change the spin.
         if(Random()< spin->prob){
+
             //The change in the spin also changes the field that its neighbours see.
-            for(int j=0; j<4; j++){
-                // Determine the correct bond index
-                if (j == 0) bond_index = n;  // Right
-                else if (j == 1) bond_index = sistema->Size + n;  // Up
-                else if (j == 2) bond_index = spin->vecinos[2];  // Left
-                else if (j == 3) bond_index = sistema->Size + spin->vecinos[3];  // Down
-                Actualizarvecinos(spin, &sistema->lattice[spin->vecinos[j]], sistema->Beta, J,  bond_index);
+            for (int d = 0; d < sistema->Dim; d++) {
+                // Positive direction
+                int j_pos = 2 * d;
+                bond_index = d * sistema->Size + n;
+                Actualizarvecinos(spin, &sistema->lattice[spin->vecinos[j_pos]], sistema->Beta, J, bond_index);
+
+                // Negative direction
+                int j_neg = 2 * d + 1;
+                bond_index = d * sistema->Size + spin->vecinos[j_neg];
+                Actualizarvecinos(spin, &sistema->lattice[spin->vecinos[j_neg]], sistema->Beta, J, bond_index);
             }
             //I change the system
             sistema->Energy += spin->dE;
@@ -216,11 +248,12 @@ void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, i
 
 int main()
 {
-    int inputdata[6];
+    int inputdata[6], d;
     double TMax, TMin;
     Input(inputdata, &TMax, &TMin);
     ini_ran(inputdata[5]);
     double dT = (TMax - TMin)/(inputdata[1]-1);
+
     /*int flag;
     printf("Please select the type of simulation you wish to perform:\n");
     printf("Enter '1' for a standard Ising model simulation or '2' for a spin glass simulation.\n");
@@ -229,10 +262,20 @@ int main()
         printf("Not valid input");
         return 0;
     }*/
+
     EspinLattice *sistemas = (EspinLattice *)malloc(inputdata[1]* sizeof(EspinLattice));
     if (sistemas == NULL) {
         printf("Error at memory allocation.\n");
         exit(1);
+    }
+
+    printf("Please, select the number of dimensions in which you want to simulate the system:\n");
+    printf("Possible dimensions: 2, 3.\n");
+    scanf("%d", &d);
+    printf("Dimension %d choosen.\n", d);
+    if( d != 2 && d != 3){
+        printf("Not valid input");
+        return 0;
     }
 
     TimeEvolStorage *ficheros = (TimeEvolStorage *)malloc(inputdata[1]*sizeof(TimeEvolStorage));
@@ -241,17 +284,18 @@ int main()
         exit(1);
     }
 
-    double *J = (double *)malloc(2*inputdata[0]*inputdata[0]*sizeof(double));
+    int N=int_pow(inputdata[0], d);
+    double *J = (double *)malloc(d*N*sizeof(double));
     if (J == NULL) {
         printf("Error at memory allocation.\n");
         exit(1);
     }
-    for(int i=0; i<2*inputdata[0]*inputdata[0]; i++)
+    for(int i=0; i<d*N; i++)
         J[i] = -1;
 
     // Inicializar cada sistema
     for (int i = 0; i < inputdata[1]; i++) {
-        InicializarSistema2D(&sistemas[i], inputdata[0], TMin + dT * i);
+        InicializarSistema2D(&sistemas[i], inputdata[0], TMin + dT * i, d);
         InicializarFicheros(TMin + dT * i, &ficheros[i], i);
         InicializarEnergias(&sistemas[i], J);
     }

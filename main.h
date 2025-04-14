@@ -6,11 +6,12 @@ unsigned int ir1;
 unsigned char ind_ran,ig1,ig2,ig3;
 #define NormRANu (2.3283063671E-10F)
 #define Pi 3.14159265
+#define MAXDIM  3
 
 
 typedef struct{
     int value;
-    unsigned int vecinos[4];
+    unsigned int vecinos[2*MAXDIM];
     double dE;
     float prob;
 }Espin;
@@ -18,6 +19,7 @@ typedef struct{
 
 typedef struct{
     Espin *lattice;
+    int Dim;
     unsigned int Size;
     double Beta;
     double Energy;
