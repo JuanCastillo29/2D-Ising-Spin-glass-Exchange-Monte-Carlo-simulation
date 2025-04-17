@@ -203,17 +203,17 @@ void PasoMonteCarlo(EspinLattice *sistema, double *J){
     }
 }
 
-void CambioTemperatura(TimeEvolStorage *fichero1, EspinLattice *sistema, TimeEvolStorage *fichero2 ){
-    EspinLattice *sistema1 = &sistema[fichero1->Systemindex], *sistema2 = &sistema[fichero2->Systemindex];
+void CambioTemperatura(TimeEvolStorage *fichero1, EspinLattice *sistema, TimeEvolStorage *fichero2, int Replica ){
+    EspinLattice *sistema1 = &sistema[fichero1->Systemindex[Replica]], *sistema2 = &sistema[fichero2->Systemindex[Replica]];
     double db = sistema2->Beta - sistema1->Beta, dE = sistema2->Energy - sistema1->Energy;
     double Prob = exp(-db*dE);
     if(Random()<Prob){
         double aux = sistema2->Beta;
         sistema2->Beta = sistema1->Beta;
         sistema1->Beta = aux;
-        int aux2 = fichero2->Systemindex;
-        fichero2->Systemindex = fichero1->Systemindex;
-        fichero1->Systemindex = aux2;
+        int aux2 = fichero2->Systemindex[Replica];
+        fichero2->Systemindex[Replica] = fichero1->Systemindex[Replica];
+        fichero1->Systemindex[Replica] = aux2;
         for(int i = 0; i<sistema1->Size; i++){
             sistema1->lattice[i].prob = exp(-(sistema1->Beta)*sistema1->lattice[i].dE);
             sistema2->lattice[i].prob = exp(-(sistema2->Beta)*sistema2->lattice[i].dE);
@@ -221,27 +221,36 @@ void CambioTemperatura(TimeEvolStorage *fichero1, EspinLattice *sistema, TimeEvo
     }
 }
 
-void InicializarFicheros(double T, TimeEvolStorage *E, int i){
+void InicializarFicheros(double T, TimeEvolStorage *E, int i, int NReplicas, int flag){
     char namefile[50];
     sprintf(namefile, "Energias/Temperatura=%lf.dat", T);
     E->f = fopen(namefile, "w+");
     E->T = T;
-    E->Systemindex = i;
+    for(int j=0; j<flag; j++)
+        E->Systemindex[j]= i+j*NReplicas;
     if(E->f == NULL)
         printf("Error at openning the file: %s.", namefile);
 }
 
-void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, int TExchange,double *J, TimeEvolStorage *ficheros){
+void Simulacion(EspinLattice *sistemas, int Ttime, int NReplicas, int TMedida, int TExchange,double *J, TimeEvolStorage *ficheros, int flag){
+    double E;
     for(int t=0; t<Ttime; t++){
         for(int j=0; j<NReplicas; j++)
             PasoMonteCarlo(&sistemas[j], J);
         if(t%TMedida == 0){
-            for(int j=0; j<NReplicas; j++)
-                fprintf(ficheros[j].f, "%d \t %lf\n", t, sistemas[ficheros[j].Systemindex].Energy/sistemas[ficheros[j].Systemindex].Size);
+            for(int j=0; j<NReplicas; j++){
+                E = 0;
+                for(int k=0; k < flag; k++)
+                    E +=  (sistemas[ficheros[j].Systemindex[k]].Energy/sistemas[ficheros[j].Systemindex[k]].Size) ;
+                fprintf(ficheros[j].f, "%d \t %lf\n", t,E/flag);
+            }
         }
         if(t%TExchange == 0){
-            for(int i= (t/TExchange)%2; i<NReplicas -1; i+=2)
-                CambioTemperatura(&ficheros[i], sistemas, &ficheros[i+1]);
+            for(int i= (t/TExchange)%2; i<NReplicas -1; i+=2){
+                for(int j=0; j<flag; j++){
+                    CambioTemperatura(&ficheros[i], sistemas, &ficheros[i+1], j);
+                }
+            }
         }
     }
 }
@@ -254,16 +263,16 @@ int main()
     ini_ran(inputdata[5]);
     double dT = (TMax - TMin)/(inputdata[1]-1);
 
-    /*int flag;
+    int flag;
     printf("Please select the type of simulation you wish to perform:\n");
     printf("Enter '1' for a standard Ising model simulation or '2' for a spin glass simulation.\n");
     scanf("%d", &flag);
     if(flag != 1 && flag != 2){
         printf("Not valid input");
         return 0;
-    }*/
+    }
 
-    EspinLattice *sistemas = (EspinLattice *)malloc(inputdata[1]* sizeof(EspinLattice));
+    EspinLattice *sistemas = (EspinLattice *)malloc(flag*inputdata[1]* sizeof(EspinLattice));
     if (sistemas == NULL) {
         printf("Error at memory allocation.\n");
         exit(1);
@@ -290,17 +299,27 @@ int main()
         printf("Error at memory allocation.\n");
         exit(1);
     }
-    for(int i=0; i<d*N; i++)
-        J[i] = -1;
+    if(flag==1)
+        for(int i=0; i<d*N; i++)
+            J[i] = -1;
+    if(flag == 2)
+        for(int i=0; i<d*N; i++)
+            J[i] = DistrGauss();
 
     // Inicializar cada sistema
     for (int i = 0; i < inputdata[1]; i++) {
         InicializarSistema2D(&sistemas[i], inputdata[0], TMin + dT * i, d);
-        InicializarFicheros(TMin + dT * i, &ficheros[i], i);
+        InicializarFicheros(TMin + dT * i, &ficheros[i], i, inputdata[1], flag);
         InicializarEnergias(&sistemas[i], J);
+
+        if(flag==2){
+            InicializarSistema2D(&sistemas[i+inputdata[1]], inputdata[0], TMin + dT * i, d);
+            InicializarEnergias(&sistemas[i+inputdata[1]], J);
+        }
     }
+
     //Simulación aquí:
-    Simulacion(sistemas, inputdata[4], inputdata[1], inputdata[3], inputdata[2], J, ficheros);
+    Simulacion(sistemas, inputdata[4], inputdata[1], inputdata[3], inputdata[2], J, ficheros, flag);
 
     for(int i=0; i< inputdata[1]; i++)
         binning(&ficheros[i],inputdata[4]*1.0/inputdata[3], 100);

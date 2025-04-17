@@ -7,6 +7,7 @@ unsigned char ind_ran,ig1,ig2,ig3;
 #define NormRANu (2.3283063671E-10F)
 #define Pi 3.14159265
 #define MAXDIM  3
+#define MAXREPLICAS 2
 
 
 typedef struct{
@@ -28,7 +29,7 @@ typedef struct{
 
 typedef struct{
     FILE *f;
-    int Systemindex;
+    int Systemindex[MAXREPLICAS];
     double T;
 } TimeEvolStorage;
 
